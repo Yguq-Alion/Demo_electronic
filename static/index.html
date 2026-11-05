@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Генератор карточек товаров КИП</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#1a2233; --muted:#6b7280; --line:#e3e6ec;
+          --accent:#2563eb; --accent-ink:#fff; --err:#b91c1c; --err-bg:#fef2f2; --ok:#047857; --warn-bg:#fffbeb; --warn-line:#f59e0b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  .wrap { max-width:980px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 22px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:860px){ .cols { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .panel h2 { font-size:15px; margin:0 0 10px; }
+  textarea { width:100%; height:340px; font:13px/1.5 Consolas,Menlo,monospace; border:1px solid var(--line);
+             border-radius:8px; padding:10px; resize:vertical; color:var(--ink); }
+  textarea:focus, button:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  button { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:8px;
+           padding:8px 14px; font-size:14px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  button.primary:disabled { opacity:.55; cursor:default; }
+  .hint { color:var(--muted); font-size:13px; margin-top:8px; }
+  .banner { border-radius:8px; padding:10px 14px; margin-bottom:14px; display:none; }
+  .banner.err { display:block; background:var(--err-bg); color:var(--err); border:1px solid #fecaca; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { padding:6px 12px; font-size:13px; }
+  .tabs button.active { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  pre { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:12px;
+        font:12.5px/1.5 Consolas,Menlo,monospace; overflow:auto; max-height:420px; white-space:pre-wrap; }
+  .field { margin-bottom:12px; }
+  .field label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+                 color:var(--muted); margin-bottom:3px; }
+  .field .val { font-size:15px; }
+  .val.big { font-size:17px; font-weight:600; }
+  table { border-collapse:collapse; width:100%; margin:4px 0 8px; }
+  td { border-bottom:1px solid var(--line); padding:6px 8px 6px 0; vertical-align:top; }
+  td.k { color:var(--muted); width:38%; }
+  td.v.na { color:var(--muted); font-style:italic; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { background:#eef2ff; color:#3730a3; border-radius:999px; padding:3px 11px; font-size:13px; }
+  .missing { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:8px;
+             padding:8px 12px; font-size:14px; }
+  .missing b { color:#92400e; }
+  #result, #cardView, #jsonView { display:none; }
+  .placeholder { color:var(--muted); text-align:center; padding:60px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI-помощник для подготовки товарных описаний</h1>
+  <p class="sub">Черновик карточки товара КИП из входного JSON: SEO-заголовок, SEO-описание, характеристики, поисковые запросы, commercial-блок. Все технические значения берутся только из входных данных; отсутствующие помечаются «данных нет».</p>
+
+  <div id="banner" class="banner err" role="alert"></div>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>Данные товара (JSON)</h2>
+      <textarea id="input" spellcheck="false" placeholder='{
+  "name": "Манометр показывающий DM 02",
+  "manufacturer": "Манотомь",
+  "specs": { "диапазон измерений": "0–1,6 МПа", "класс точности": "1,5" },
+  "description": "Прибор предназначен для измерения избыточного давления…"
+}'></textarea>
+      <div class="row">
+        <button class="primary" id="go">Сгенерировать карточку</button>
+        <button id="ex1" title="Товар 1 из задания">Пример 1</button>
+        <button id="ex2" title="Товар 2 из задания">Пример 2</button>
+        <button id="clear">Очистить</button>
+      </div>
+      <p class="hint">Поля name обязательно; manufacturer, specs, description — по возможности. Посторонние поля (price, sku) игнорируются.</p>
+    </div>
+
+    <div class="panel" id="resultPanel">
+      <div class="tabs">
+        <button id="tabCard" class="active">Карточка</button>
+        <button id="tabJson">JSON</button>
+        <button id="copy" style="margin-left:auto;">Копировать JSON</button>
+      </div>
+      <div class="placeholder" id="placeholder">Результат появится здесь</div>
+
+      <div id="cardView">
+        <div class="field"><label>SEO-заголовок</label><div class="val big" id="fTitle"></div><div class="hint" id="fTitleLen"></div></div>
+        <div class="field"><label>SEO-описание</label><div class="val" id="fDesc"></div><div class="hint" id="fDescLen"></div></div>
+        <div class="field"><label>Характеристики</label><table id="fSpecs"></table></div>
+        <div class="field"><label>Поисковые запросы</label><div class="chips" id="fQueries"></div></div>
+        <div class="field"><label>Commercial-блок</label><div class="val" id="fComm"></div></div>
+        <div class="field" id="fMissingWrap"><div class="missing" id="fMissing"></div></div>
+      </div>
+
+      <div id="jsonView"><pre id="fJson"></pre></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastJson = null;
+
+function showBanner(text){ const b=$('banner'); b.textContent=text; b.style.display=text?'block':'none'; }
+
+async function loadExamples(){
+  try {
+    const r = await fetch('/api/examples');
+    const data = await r.json();
+    const ex = [ $('ex1'), $('ex2') ];
+    (data.items||[]).slice(0,2).forEach((item,i)=>{ ex[i].onclick = ()=> { $('input').value = JSON.stringify(item.product, null, 2); showBanner(''); }; });
+  } catch(e) { /* примеры недоступны — кнопки просто не заполняются */ }
+}
+
+function renderCard(c){
+  lastJson = c;
+  $('placeholder').style.display='none';
+  $('fTitle').textContent = c.seo_title;
+  $('fTitleLen').textContent = `Длина заголовка: ${c.seo_title.length} симв. (лимит 70)`;
+  $('fDesc').textContent = c.seo_description;
+  const dl = c.seo_description.length;
+  $('fDescLen').textContent = `Длина описания: ${dl} симв. (целевой диапазон 800–1200; короче — данных мало, промпт запрещает добивать выдумками)`;
+  const tb = $('fSpecs'); tb.innerHTML='';
+  for (const s of c.specs){
+    const tr=document.createElement('tr');
+    const k=document.createElement('td'); k.className='k'; k.textContent=s.name;
+    const v=document.createElement('td'); v.textContent=s.value;
+    if (s.value==='данных нет') v.className='v na';
+    tr.append(k,v); tb.append(tr);
+  }
+  const q=$('fQueries'); q.innerHTML='';
+  for (const item of c.search_queries){ const ch=document.createElement('span'); ch.className='chip'; ch.textContent=item; q.append(ch); }
+  $('fComm').textContent = c.commercial_block;
+  const mw=$('fMissingWrap');
+  if (c.missing_fields && c.missing_fields.length){
+    mw.style.display='block';
+    $('fMissing').innerHTML = '<b>Отсутствуют и требуют уточнения:</b> ' +
+      c.missing_fields.map(f=>`«${f}»`).join(', ');
+  } else { mw.style.display='none'; }
+  $('fJson').textContent = JSON.stringify(c, null, 2);
+  $('cardView').style.display='block'; $('jsonView').style.display='none';
+  $('resultPanel').style.display='block';
+}
+
+async function generate(){
+  showBanner('');
+  const btn=$('go'); btn.disabled=true; btn.textContent='Генерирую…';
+  try {
+    const r = await fetch('/api/card', { method:'POST', headers:{'Content-Type':'application/json'}, body: $('input').value });
+    const data = await r.json();
+    if (!r.ok){ showBanner(data.error || `Ошибка ${r.status}`); return; }
+    renderCard(data);
+  } catch(e){
+    showBanner('Сервис недоступен: ' + e.message);
+  } finally {
+    btn.disabled=false; btn.textContent='Сгенерировать карточку';
+  }
+}
+
+$('go').onclick = generate;
+$('clear').onclick = ()=>{ $('input').value=''; showBanner(''); };
+$('tabCard').onclick = ()=>{ $('tabCard').classList.add('active'); $('tabJson').classList.remove('active'); $('cardView').style.display='block'; $('jsonView').style.display='none'; };
+$('tabJson').onclick = ()=>{ $('tabJson').classList.add('active'); $('tabCard').classList.remove('active'); $('jsonView').style.display='block'; $('cardView').style.display='none'; };
+$('copy').onclick = ()=>{ if(lastJson) navigator.clipboard.writeText(JSON.stringify(lastJson,null,2)); };
+loadExamples();
+</script>
+</body>
+</html>

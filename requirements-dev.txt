@@ -1,0 +1,3 @@
+pytest>=8.0
+httpx>=0.27        # TestClient для FastAPI
+# httpx2 ставится зависимостью openai и используется в тестах клиента (MockTransport)
